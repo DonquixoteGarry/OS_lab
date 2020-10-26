@@ -4,32 +4,34 @@
 
 首先，要明白函数调用中栈的详细情况。
 
-> 补充:内联函数
+> 内联函数
 >
 > 在编译阶段，将内联函数的代码拷贝到当前地址，不需要函数地址的转移以及压栈出栈等操作。
+>
 
-根据注释，得出函数print_stackframe（）代码如下，
+根据注释，得出函数print_stackframe（）代码如下
 
-由 ebp 开始向上找两位所保存的值是第一个参数，以此类推。然后找到下一个函数栈的 eip 和 ebp,下一个函数的 eip 就是压入栈的返回地址，也就是当前 ebp 向上找一位所保存的值，下一个函数的 ebp 就是当前 ebp 保存的地址所指向的地方。
+
 
 ```c
 
 uint32_t *ebp = 0; //定义为指针，方便访问
 uint32_t esp = 0;
 //查看文件发现read_ebp()和read_eip()都是inline内联函数
-//这里read_ebp必须定义为inline函数，否则获取的是执行read_ebp函数时的ebp寄存器的值
+//这里read_ebp必须定义为inline函数
  ebp = (uint32_t *)read_ebp();
-//read_esp指令要
+//read_esp函数则不能定义为内联函数，调用read_eip时会把当前指令的下一条指令的地址
+//（也就是eip寄存器的值）压栈，那么在进入read_eip函数内部后便可以从栈中获取到调用前eip寄存器值。
  esp = read_eip();
 
- while (ebp)
+ while (ebp) //循环执行下列语句直到ebp为0
  {
      cprintf("ebp:0x%08x eip:0x%08x args:", (uint32_t)ebp, esp);
      cprintf("0x%08x 0x%08x 0x%08x 0x%08x\n", ebp[2], ebp[3], ebp[4], ebp[5]);
+	//分别是第一、第二、第三、第四个参数
+     print_debuginfo(esp - 1); //打印当前指令信息
 
-     print_debuginfo(esp - 1);
-
-     esp = ebp[1];
+     esp = ebp[1]; //函数返回地址
      ebp = (uint32_t *)*ebp;
  }
   /* LAB1 YOUR CODE : STEP 1 */
