@@ -14,7 +14,7 @@ target remote :1234
 #意为每次暂停就执行一次下方 x /i ($cs<<4)+pc 语句
 #实际指令地址是由$pc和$cs计算得到的($cs*16+$pc)
 define hook-stop
-x /i ($cs<<4)+pc
+x /i ($cs<<4)+$pc
 end
 ```
 
