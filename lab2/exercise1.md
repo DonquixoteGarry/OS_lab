@@ -25,7 +25,7 @@ first-fit算法(简称FFMA)中,分配器保存了一个空闲块组成的表(俗
 ```
 (2)函数 `default_init`
 
-可复用演示中的 `default_init`函数初始化空闲表`free_list`和给`nr_free`置零.`nr_free`指空闲块数量.
+可复用演示中的 `default_init`函数初始化空闲表`free_list`和给`nr_free`置零.`nr_free`指空闲块页数总和.
 ```
 
 ```
@@ -33,7 +33,9 @@ first-fit算法(简称FFMA)中,分配器保存了一个空闲块组成的表(俗
 
 调用关系:`kern_init` --> `pmm_init` --> `page_init` --> `init_memmap` -->`pmm_manager` --> `init_memmap`
 
-此函数用于初始化空闲块(使用基地址`addr_base`和页数`page_number`作为参数).为初始化空闲块,先得初始化空闲块的每一页(按照头文件`memlayout.h`).此过程需要
+此函数用于初始化空闲块(使用基地址`addr_base`和页数`page_number`作为参数).
+
+为初始化空闲块,先得初始化空闲块的每一页(按照头文件`memlayout.h`).此过程需要(p为`page`型指针)
 
 - 将`p->flag`置为`PG_property`(表示此页合法).
 	ps.在文件`pmm.c`中的`pmm_init`函数中,`p->flag`被初始化为`PG_reserved`
@@ -56,13 +58,13 @@ first-fit算法(简称FFMA)中,分配器保存了一个空闲块组成的表(俗
 一.遍历空闲表过程
 list_entry_t le = &free_list;
 while((le=list_next(le)) != &free_list) {...
-	1.while循环中,创建一个page型结构体(*p)并检查其大小是否大于n
+	1.while循环中,创建一个page型结构体(*p指向该块首页)并检查其所在块大小是否大于n
  		struct Page *p = le2page(le, page_link);
         if(p->property >= n){ ...
-    2.如果找到了这个块(*p),那意味着块大小符合要求,malloc函数能以此申请块大小n的空间.malloc函数请求其空间后,我们应将`PG_reserved`置为 1, `PG_property`置为 0, 并且断开其与空闲表的连接
+    2.如果找到了这个块(*p),那意味着块大小符合要求,malloc函数能以此申请n页的空间.malloc函数请求其空间后,我们应将`PG_reserved`置为 1, `PG_property`置为 0, 并且断开其与空闲表的连接
     	ps.如果块大小大于n(`p->property > n`),我们应重新计算此空闲块中的空闲页数
     		例 :`le2page(le,page_link))->property = p->property - n;`
-    3.重新计算剩余空闲块数`nr_free`
+    3.重新计算剩余空闲页数总和`nr_free`
     4.返回这个块(*p)
 
 二.如果不能找到够大的块,那么返回空值`NULL`
@@ -80,7 +82,7 @@ while((le=list_next(le)) != &free_list) {...
 3.尝试合并小块,但这将改变某些页的`p->property`值
 ```
 
-
+>2.
 
 ​		
 
