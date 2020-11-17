@@ -1,8 +1,8 @@
 # 练习1
 
-> 1.注释翻译
+> 一.注释翻译
 
-> >  综述		
+> >  1. first-fit算法综述		
 
 ```
 first-fit算法(简称FFMA)中,分配器保存了一个空闲块组成的表(俗称空闲表).当收到分配内存请求时,它依序遍历以找到第一个够大的能满足请求的块.
@@ -10,7 +10,7 @@ first-fit算法(简称FFMA)中,分配器保存了一个空闲块组成的表(俗
 应重写 `default_init`, `default_init_memmap`,`default_alloc_pages`, `default_free_pages`四个函数.
 ```
 
-> > 实现细节		
+> > 2. 实现细节		
 
 ````
 (1)准备
@@ -27,6 +27,8 @@ first-fit算法(简称FFMA)中,分配器保存了一个空闲块组成的表(俗
 
 可复用演示中的 `default_init`函数初始化空闲表`free_list`和给`nr_free`置零.`nr_free`指空闲块页数总和.
 ```
+
+
 
 ```
 (3)函数 `default_init_memmap`
@@ -82,8 +84,132 @@ while((le=list_next(le)) != &free_list) {...
 3.尝试合并小块,但这将改变某些页的`p->property`值
 ```
 
->2.
 
-​		
 
-​		
+
+>二.代码修改详解
+
+​		根据上述的注释,我们可以依次对四个函数及其相关代码进行修改.
+
+> > 1. `default_init`函数及其修改
+
+```
+static void
+default_init(void) {
+    list_init(&free_list);
+    nr_free = 0;
+}
+```
+
+该函数功能依次是初始化头节点和将空闲页数置零.
+
+代码不需修改.
+
+> > 2. `default_init_memmap`函数及其修改
+
+```
+static void
+default_init_memmap(struct Page *base, size_t n) {
+    assert(n > 0);
+    struct Page *p = base;
+    for (; p != base + n; p ++) {
+        assert(PageReserved(p));
+        p->flags = p->property = 0;
+        set_page_ref(p, 0);
+    }
+    base->property = n;
+    SetPageProperty(base);
+    nr_free += n;
+    list_add_before(&free_list, &(base->page_link));
+}
+```
+
+该函数功能是,检查从给定基地址开始的大小为n页的空闲块,并将其加入空闲表中.
+
+代码不需修改.
+
+> > ​	3.`default_alloc_pages`函数及其修改
+
+```c
+static struct Page *
+default_alloc_pages(size_t n) {
+    assert(n > 0);
+    if (n > nr_free) {
+        return NULL;
+    }
+    struct Page *page = NULL;
+    list_entry_t *le = &free_list;
+    while ((le = list_next(le)) != &free_list) {
+        struct Page *p = le2page(le, page_link);
+        if (p->property >= n) {
+            page = p;
+            break;
+        }
+    }
+    if (page != NULL) {
+        if (page->property > n) {
+            struct Page *p = page + n;
+            p->property = page->property - n;
+            SetPageProperty(p);
+            list_add_after(&(page->page_link), &(p->page_link));
+        }
+        list_del(&(page->page_link));
+        nr_free -= n;
+        ClearPageProperty(page);
+    }
+    return page;
+}
+```
+
+该函数功能是,申请大小为n页的空闲页空间,并返回所需空间的首页的指针.
+
+由于原函数中没有将所申请空闲块多余的部分的首页(即指针`p`指向的页)置为新的首页(即`flag`值设为`PG_property`),于是修改时调用`SetPageProperty()`函数修改`flag`值.
+
+> > ​	4.`default_free_pages`函数及其修改
+
+```c
+static void
+default_free_pages(struct Page *base, size_t n) {
+    assert(n > 0);
+    struct Page *p = base;
+    for (; p != base + n; p ++) {
+        assert(!PageReserved(p) && !PageProperty(p));
+        p->flags = 0;
+        set_page_ref(p, 0);
+    }
+    base->property = n;
+    SetPageProperty(base);
+    list_entry_t *le = list_next(&free_list);
+    while (le != &free_list) {
+        p = le2page(le, page_link);
+        le = list_next(le);
+        if (base + base->property == p) {
+            base->property += p->property;
+            ClearPageProperty(p);
+            list_del(&(p->page_link));
+        }
+        else if (p + p->property == base) {
+            p->property += base->property;
+            ClearPageProperty(base);
+            base = p;
+            list_del(&(p->page_link));
+        }
+    }
+    nr_free += n;
+    le = list_next(&free_list);
+    while (le != &free_list) {
+        p = le2page(le, page_link);
+        if (base + base->property <= p) {
+            assert(base + base->property != p);
+            break;
+        }
+        le = list_next(le);
+    }
+    list_add_before(le, &(base->page_link));
+}
+
+```
+
+该函数功能是,先取消对给定基地址开始的n页空闲页的引用,再将其加入空闲表中,然后合并小空闲块,最后进行按地址从低到高插入空闲表中的的合适位置.
+
+原函数中,没有对新空闲页的相对于原空闲表的首页的地址进行大小对比,导致无法按照地址大小排序和插入新空闲页.
